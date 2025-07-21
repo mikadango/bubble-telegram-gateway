@@ -52,9 +52,9 @@ app.post('/api/telegram/send', async (req, res) => {
       email: email || 'not provided'
     });
 
-    // Map chat_id to topicId for internal logic, treating empty or 0 as invalid
-    const topicId = !chat_id ? null : chat_id;
-    console.log(`🔄 Mapped chat_id to topicId: ${topicId || 'INVALID (0)'}`);
+    // Map chat_id to topicId for internal logic, treating empty as invalid
+    const topicId = chat_id;
+    console.log(`🔄 Mapped chat_id to topicId: ${topicId}`);
 
     if (!message) {
       console.log('❌ Validation Failed:', {
@@ -65,9 +65,6 @@ app.post('/api/telegram/send', async (req, res) => {
         error: 'Missing required field: message' 
       });
     }
-
-    let finalTopicId = topicId;
-    let topicCreated = false;
 
     // Compose the message with subject
     console.log('📋 Composing message...');
@@ -83,29 +80,68 @@ app.post('/api/telegram/send', async (req, res) => {
     }
     console.log('📎 Final message length:', composedMessage.length);
 
-    // Try to send message to the topic
+    // If chat_id is 0, create a new topic
+    if (chat_id === 0) {
+      if (!email) {
+        console.log('❌ Cannot create new topic: No email provided');
+        return res.status(400).json({ 
+          error: 'chat_id is 0 and email not provided for new topic creation' 
+        });
+      }
+      console.log('\n🆕 CREATING NEW TOPIC (chat_id=0):');
+      console.log(`- Customer Email: ${email}`);
+      // Create new topic using email as the title
+      const topicTitle = `Customer: ${email}`;
+      console.log(`- Topic Title: ${topicTitle}`);
+      const topicResult = await bot.createForumTopic(
+        process.env.TELEGRAM_GROUP_ID,
+        topicTitle,
+        { icon_color: 0x6FB9F0 }
+      );
+      const newTopicId = topicResult.message_thread_id;
+      console.log(`✅ New topic created: ${newTopicId}`);
+      // Send message to the new topic
+      console.log('\n📤 SENDING TO NEW TOPIC:');
+      console.log(`- Topic ID: ${newTopicId}`);
+      const newMessageResult = await bot.sendMessage(
+        process.env.TELEGRAM_GROUP_ID,
+        `**Customer Message:**\n${composedMessage}`,
+        {
+          message_thread_id: newTopicId,
+          parse_mode: 'Markdown'
+        }
+      );
+      console.log('\n✅ SUCCESS:');
+      console.log(`- Message ID: ${newMessageResult.message_id}`);
+      console.log(`- New Topic ID: ${newTopicId}`);
+      return res.json({
+        success: true,
+        chat_id: newTopicId,
+        messageId: newMessageResult.message_id,
+        topicCreated: true
+      });
+    }
+
+    // Try to send message to the topic (for non-zero chat_id)
     try {
       console.log(`\n📤 SENDING MESSAGE:`);
-      console.log(`🎯 Target Topic ID: ${finalTopicId}`);
+      console.log(`🎯 Target Topic ID: ${topicId}`);
       console.log(`📦 Group ID: ${process.env.TELEGRAM_GROUP_ID}`);
-      
       const messageResult = await bot.sendMessage(
         process.env.TELEGRAM_GROUP_ID,
         `**Customer Message:**\n${composedMessage}`,
         {
-          message_thread_id: finalTopicId,
+          message_thread_id: topicId,
           parse_mode: 'Markdown'
         }
       );
       console.log(`\n✅ SUCCESS:`);
       console.log(`📝 Message ID: ${messageResult.message_id}`);
-      console.log(`💬 Topic ID: ${finalTopicId}`);
-      
+      console.log(`💬 Topic ID: ${topicId}`);
       res.json({
         success: true,
-        chat_id: finalTopicId,
-        messageId: messageResult.message_id,
-        topicCreated
+        chat_id: topicId,
+        messageId: messageResult.message_id
       });
     } catch (sendError) {
       console.log('\n❌ ERROR SENDING MESSAGE:');

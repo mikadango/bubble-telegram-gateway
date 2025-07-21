@@ -12,14 +12,6 @@ const PORT = process.env.PORT || 3000;
 // Initialize Telegram Bot
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
-// Team member IDs
-const TEAM_MEMBERS = [
-  parseInt(process.env.JAMES_TELEGRAM_ID),
-  parseInt(process.env.SIMON_TELEGRAM_ID)
-];
-
-
-
 // Security middleware
 app.use(helmet());
 app.use(cors());
@@ -212,26 +204,49 @@ app.post('/api/telegram/send', async (req, res) => {
 // Telegram → Bubble: Webhook for receiving team replies
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
+    console.log('\n📨 NEW WEBHOOK: Telegram → Bubble');
+    console.log('⏰ Time:', new Date().toISOString());
+
     const { message } = req.body;
+    
+    // Log the incoming webhook data
+    console.log('\n📥 INCOMING WEBHOOK DATA:', {
+      messageId: message?.message_id || 'not provided',
+      from: message?.from ? {
+        id: message.from.id,
+        username: message.from.username,
+        firstName: message.from.first_name
+      } : 'not provided',
+      text: message?.text ? 
+        `${message.text.slice(0, 50)}${message.text.length > 50 ? '...' : ''}` : 
+        'not provided',
+      threadId: message?.message_thread_id || 'not provided'
+    });
 
-    // Verify it's from Telegram (in production, verify webhook signature)
+    // Verify message format
     if (!message || !message.text) {
+      console.log('❌ Invalid message format');
       return res.status(400).json({ error: 'Invalid message format' });
-    }
-
-    // Check if message is from a team member
-    if (!TEAM_MEMBERS.includes(message.from.id)) {
-      return res.status(200).json({ message: 'Ignored non-team message' });
     }
 
     // Check if message is in a topic
     if (!message.message_thread_id) {
+      console.log('❌ Message not in a topic');
       return res.status(200).json({ message: 'Ignored non-topic message' });
     }
 
-    // Send message to Bubble with topic ID
+    // Send message to Bubble
+    console.log('\n📤 SENDING TO BUBBLE:');
+    console.log('- URL:', `${process.env.BUBBLE_API_URL}/api/1.1/wf/receive_telegram`);
+    console.log('- Payload:', {
+      message: message.text.slice(0, 100) + (message.text.length > 100 ? '...' : ''),
+      topic_id: message.message_thread_id,
+      sender_type: 'team',
+      sender_name: message.from.first_name || 'Team Member'
+    });
+
     const bubbleResponse = await axios.post(
-      `${process.env.BUBBLE_API_URL}/api/1.1/obj/chat_message`,
+      `${process.env.BUBBLE_API_URL}/api/1.1/wf/receive_telegram`,
       {
         message: message.text,
         topic_id: message.message_thread_id,
@@ -246,13 +261,23 @@ app.post('/api/telegram/webhook', async (req, res) => {
       }
     );
 
+    console.log('\n✅ SUCCESS:');
+    console.log('- Status:', bubbleResponse.status);
+    console.log('- Response:', bubbleResponse.data);
+
     res.json({ 
-      success: true, 
-      bubbleResponse: bubbleResponse.data 
+      success: true
     });
 
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    console.error('\n💥 ERROR PROCESSING WEBHOOK:');
+    console.log('- Error Message:', error.message);
+    if (error.response) {
+      console.log('- Status:', error.response.status);
+      console.log('- Response:', error.response.data);
+    }
+    console.log('- Stack:', error.stack);
+    
     res.status(500).json({ 
       error: 'Failed to process webhook',
       details: error.message 
@@ -387,4 +412,4 @@ process.on('SIGINT', async () => {
     console.log('❌ Error deleting webhook:', error.message);
   }
   process.exit(0);
-}); 
+});

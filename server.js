@@ -215,7 +215,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
       from: message?.from ? {
         id: message.from.id,
         username: message.from.username,
-        firstName: message.from.first_name
+        firstName: message.from.first_name,
+        is_bot: message.from.is_bot
       } : 'not provided',
       text: message?.text ? 
         `${message.text.slice(0, 50)}${message.text.length > 50 ? '...' : ''}` : 
@@ -223,8 +224,14 @@ app.post('/api/telegram/webhook', async (req, res) => {
       threadId: message?.message_thread_id || 'not provided'
     });
 
+    // Only process if not from a bot
+    if (!message || message.from.is_bot) {
+      console.log('❌ Ignored: Message is from a bot or missing');
+      return res.status(200).json({ message: 'Ignored bot or invalid message' });
+    }
+
     // Verify message format
-    if (!message || !message.text) {
+    if (!message.text) {
       console.log('❌ Invalid message format');
       return res.status(400).json({ error: 'Invalid message format' });
     }

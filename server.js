@@ -102,8 +102,8 @@ app.post('/api/telegram/send', async (req, res) => {
       }
       console.log('\n🆕 CREATING NEW TOPIC (chat_id=0):');
       console.log(`- Customer Email: ${email}`);
-      // Create new topic using email as the title
-      const topicTitle = `Customer: ${email}`;
+      // Create new topic using only the email as the title
+      const topicTitle = email;
       console.log(`- Topic Title: ${topicTitle}`);
       const topicResult = await bot.createForumTopic(
         process.env.TELEGRAM_GROUP_ID,
@@ -247,7 +247,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
     console.log('- URL:', `${process.env.BUBBLE_API_URL}/api/1.1/wf/receive_telegram`);
     console.log('- Payload:', {
       message: message.text.slice(0, 100) + (message.text.length > 100 ? '...' : ''),
-      topic_id: message.message_thread_id,
+      chat_id: message.message_thread_id,
       sender_type: 'team',
       sender_name: message.from.first_name || 'Team Member'
     });
@@ -256,7 +256,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       `${process.env.BUBBLE_API_URL}/api/1.1/wf/receive_telegram`,
       {
         message: message.text,
-        topic_id: message.message_thread_id,
+        chat_id: message.message_thread_id,
         sender_type: 'team',
         sender_name: message.from.first_name || 'Team Member'
       },

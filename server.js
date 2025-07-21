@@ -66,27 +66,47 @@ app.post('/api/telegram/send', async (req, res) => {
       });
     }
 
-    // Compose the message with subject
-    console.log('📋 Composing message...');
-    let composedMessage = '';
-    if (subject) {
-      composedMessage += `**Subject:** ${subject}\n`;
-      console.log('✍️ Added subject to message');
+    // --- Helper: Compose the message ---
+    function composeMessage(subject, message, email) {
+      console.log('📋 Composing message...');
+      let composedMessage = '';
+      if (subject) {
+        composedMessage += `**Subject:** ${subject}\n`;
+        console.log('✍️ Added subject to message');
+      }
+      composedMessage += message;
+      if (email) {
+        composedMessage += `\n\n**Email:** ${email}`;
+        console.log('✉️ Added email to message');
+      }
+      console.log('📎 Final message length:', composedMessage.length);
+      return composedMessage;
     }
-    composedMessage += message;
-    if (email) {
-      composedMessage += `\n\n**Email:** ${email}`;
-      console.log('✉️ Added email to message');
-    }
-    console.log('📎 Final message length:', composedMessage.length);
 
-    // If chat_id is 0, create a new topic
-    if (chat_id === 0) {
+    // --- Helper: Send message to a topic ---
+    async function sendMessageToTopic(targetTopicId, composedMessage) {
+      console.log(`\n📤 SENDING MESSAGE:`);
+      console.log(`🎯 Target Topic ID: ${targetTopicId}`);
+      console.log(`📦 Group ID: ${process.env.TELEGRAM_GROUP_ID}`);
+      const messageResult = await bot.sendMessage(
+        process.env.TELEGRAM_GROUP_ID,
+        `**Customer Message:**\n${composedMessage}`,
+        {
+          message_thread_id: targetTopicId,
+          parse_mode: 'Markdown'
+        }
+      );
+      console.log(`\n✅ SUCCESS:`);
+      console.log(`📝 Message ID: ${messageResult.message_id}`);
+      console.log(`💬 Topic ID: ${targetTopicId}`);
+      return messageResult;
+    }
+
+    // --- Helper: Create a new topic ---
+    async function createNewTopic(email) {
       if (!email) {
         console.log('❌ Cannot create new topic: No email provided');
-        return res.status(400).json({ 
-          error: 'chat_id is 0 and email not provided for new topic creation' 
-        });
+        throw new Error('chat_id is 0 and email not provided for new topic creation');
       }
       console.log('\n🆕 CREATING NEW TOPIC (chat_id=0):');
       console.log(`- Customer Email: ${email}`);
@@ -100,44 +120,39 @@ app.post('/api/telegram/send', async (req, res) => {
       );
       const newTopicId = topicResult.message_thread_id;
       console.log(`✅ New topic created: ${newTopicId}`);
-      // Send message to the new topic
-      console.log('\n📤 SENDING TO NEW TOPIC:');
-      console.log(`- Topic ID: ${newTopicId}`);
-      const newMessageResult = await bot.sendMessage(
-        process.env.TELEGRAM_GROUP_ID,
-        `**Customer Message:**\n${composedMessage}`,
-        {
-          message_thread_id: newTopicId,
-          parse_mode: 'Markdown'
+      return newTopicId;
+    }
+
+    // Compose the message
+    const composedMessage = composeMessage(subject, message, email);
+
+    // If chat_id is 0, create a new topic
+    if (Number(chat_id) === 0) {
+      try {
+        const newTopicId = await createNewTopic(email);
+        console.log('\n📤 SENDING TO NEW TOPIC:');
+        console.log(`- Topic ID: ${newTopicId}`);
+        const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
+        console.log('\n✅ SUCCESS:');
+        console.log(`- Message ID: ${newMessageResult.message_id}`);
+        console.log(`- New Topic ID: ${newTopicId}`);
+        return res.json({
+          success: true,
+          chat_id: newTopicId,
+          messageId: newMessageResult.message_id,
+          topicCreated: true
+        });
+      } catch (err) {
+        if (err.message === 'chat_id is 0 and email not provided for new topic creation') {
+          return res.status(400).json({ error: err.message });
         }
-      );
-      console.log('\n✅ SUCCESS:');
-      console.log(`- Message ID: ${newMessageResult.message_id}`);
-      console.log(`- New Topic ID: ${newTopicId}`);
-      return res.json({
-        success: true,
-        chat_id: newTopicId,
-        messageId: newMessageResult.message_id,
-        topicCreated: true
-      });
+        throw err;
+      }
     }
 
     // Try to send message to the topic (for non-zero chat_id)
     try {
-      console.log(`\n📤 SENDING MESSAGE:`);
-      console.log(`🎯 Target Topic ID: ${topicId}`);
-      console.log(`📦 Group ID: ${process.env.TELEGRAM_GROUP_ID}`);
-      const messageResult = await bot.sendMessage(
-        process.env.TELEGRAM_GROUP_ID,
-        `**Customer Message:**\n${composedMessage}`,
-        {
-          message_thread_id: topicId,
-          parse_mode: 'Markdown'
-        }
-      );
-      console.log(`\n✅ SUCCESS:`);
-      console.log(`📝 Message ID: ${messageResult.message_id}`);
-      console.log(`💬 Topic ID: ${topicId}`);
+      const messageResult = await sendMessageToTopic(topicId, composedMessage);
       res.json({
         success: true,
         chat_id: topicId,
@@ -151,7 +166,6 @@ app.post('/api/telegram/send', async (req, res) => {
         message: sendError.message,
         code: sendError.code
       });
-      
       // Check if topic doesn't exist (common error codes)
       const errorDescription = sendError.response?.body?.description || '';
       const isTopicError = errorDescription.includes('TOPIC_DELETED') || 
@@ -159,59 +173,26 @@ app.post('/api/telegram/send', async (req, res) => {
                           errorDescription.includes('TOPIC_NOT_FOUND') ||
                           errorDescription.includes('Bad Request: message_thread_id') ||
                           errorDescription.includes('message thread not found');
-      
       console.log(`\n🔍 ERROR ANALYSIS:`);
       console.log(`- Is Topic Error: ${isTopicError ? 'YES' : 'NO'}`);
       console.log(`- Error Description: "${errorDescription}"`);
-      
       if (sendError.response?.statusCode === 400 && isTopicError) {
-        if (!email) {
-          console.log('❌ Cannot create new topic: No email provided');
-          return res.status(400).json({ 
-            error: 'Topic not found and email not provided for new topic creation' 
+        try {
+          const newTopicId = await createNewTopic(email);
+          const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
+          res.json({
+            success: true,
+            chat_id: newTopicId,
+            messageId: newMessageResult.message_id,
+            topicCreated: true,
+            topicRecreated: true
           });
-        }
-
-        console.log('\n🆕 CREATING NEW TOPIC:');
-        console.log(`- Customer Email: ${email}`);
-        
-        // Create new topic using email as the title
-        const topicTitle = `Customer: ${email}`;
-        console.log(`- Topic Title: ${topicTitle}`);
-        
-        const topicResult = await bot.createForumTopic(
-          process.env.TELEGRAM_GROUP_ID,
-          topicTitle,
-          { icon_color: 0x6FB9F0 }
-        );
-        
-        const newTopicId = topicResult.message_thread_id;
-        console.log(`✅ New topic created: ${newTopicId}`);
-
-        // Send message to the new topic
-        console.log('\n📤 SENDING TO NEW TOPIC:');
-        console.log(`- Topic ID: ${newTopicId}`);
-        
-        const newMessageResult = await bot.sendMessage(
-          process.env.TELEGRAM_GROUP_ID,
-          `**Customer Message:**\n${composedMessage}`,
-          {
-            message_thread_id: newTopicId,
-            parse_mode: 'Markdown'
+        } catch (err) {
+          if (err.message === 'chat_id is 0 and email not provided for new topic creation') {
+            return res.status(400).json({ error: err.message });
           }
-        );
-        
-        console.log('\n✅ SUCCESS:');
-        console.log(`- Message ID: ${newMessageResult.message_id}`);
-        console.log(`- New Topic ID: ${newTopicId}`);
-
-        res.json({
-          success: true,
-          chat_id: newTopicId,
-          messageId: newMessageResult.message_id,
-          topicCreated: true,
-          topicRecreated: true
-        });
+          throw err;
+        }
       } else {
         console.log('\n❗ UNHANDLED ERROR:');
         console.log('- Not a topic error, re-throwing');

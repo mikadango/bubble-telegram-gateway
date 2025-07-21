@@ -40,62 +40,49 @@ app.get('/health', (req, res) => {
 // Bubble → Telegram: Send message to existing topic or create new one
 app.post('/api/telegram/send', async (req, res) => {
   try {
-    const { message, topicId, chatChannelId, customerId, customerEmail } = req.body;
+    // Accept chat_id, subject, message, email from Bubble
+    const { chat_id, subject, message, email } = req.body;
+    // Map chat_id to topicId for internal logic
+    const topicId = chat_id;
 
-    if (!message || !chatChannelId) {
+    if (!message || !topicId) {
       return res.status(400).json({ 
-        error: 'Missing required fields: message, chatChannelId' 
+        error: 'Missing required fields: message, chat_id' 
       });
     }
 
     let finalTopicId = topicId;
     let topicCreated = false;
 
-    // If no topicId provided, create a new topic
-    if (!topicId) {
-      if (!customerId) {
-        return res.status(400).json({ 
-          error: 'Missing customerId when creating new topic' 
-        });
-      }
-
-      console.log(`🆕 Creating new topic for customer: ${customerId}`);
-      
-      const topicTitle = `Customer: ${customerId}`;
-      const topicResult = await bot.createForumTopic(
-        process.env.TELEGRAM_GROUP_ID,
-        topicTitle,
-        { icon_color: 0x6FB9F0 }
-      );
-      
-      finalTopicId = topicResult.message_thread_id;
-      topicCreated = true;
-      console.log(`✅ New topic created: ${finalTopicId}`);
+    // Compose the message with subject
+    let composedMessage = '';
+    if (subject) {
+      composedMessage += `**Subject:** ${subject}\n`;
+    }
+    composedMessage += message;
+    if (email) {
+      composedMessage += `\n\n**Email:** ${email}`;
     }
 
     // Try to send message to the topic
     try {
       console.log(`📤 Attempting to send message to topic: ${finalTopicId}`);
-      
       const messageResult = await bot.sendMessage(
         process.env.TELEGRAM_GROUP_ID,
-        `**Customer Message:**\n${message}`,
+        `**Customer Message:**\n${composedMessage}`,
         {
           message_thread_id: finalTopicId,
           parse_mode: 'Markdown'
         }
       );
-
       console.log(`✅ Message sent successfully to topic: ${finalTopicId}`);
       console.log(`📝 Message ID: ${messageResult.message_id}`);
-
       res.json({
         success: true,
-        topicId: finalTopicId,
+        chat_id: finalTopicId,
         messageId: messageResult.message_id,
         topicCreated
       });
-
     } catch (sendError) {
       console.log('❌ Error sending message to topic');
       console.log('🔍 Error details:', {
@@ -104,7 +91,6 @@ app.post('/api/telegram/send', async (req, res) => {
         message: sendError.message,
         code: sendError.code
       });
-      
       // Check if topic doesn't exist (common error codes)
       const errorDescription = sendError.response?.body?.description || '';
       const isTopicError = errorDescription.includes('TOPIC_DELETED') || 
@@ -112,61 +98,48 @@ app.post('/api/telegram/send', async (req, res) => {
                           errorDescription.includes('TOPIC_NOT_FOUND') ||
                           errorDescription.includes('Bad Request: message_thread_id') ||
                           errorDescription.includes('message thread not found');
-      
       console.log(`🔍 Topic error check: ${isTopicError ? 'YES' : 'NO'}`);
-      // console.log(`🔍 Error description: "${errorDescription}"`);
-      
       if (sendError.response?.statusCode === 400 && isTopicError) {
-        console.log(`⚠️ Topic ${finalTopicId} doesn't exist, creating new topic`);
-        
-        if (!customerId) {
-          console.log('❌ No customerId provided for new topic creation');
+        if (!email) {
+          console.log('❌ No email provided for new topic creation');
           return res.status(400).json({ 
-            error: 'Topic not found and customerId not provided for new topic creation' 
+            error: 'Topic not found and email not provided for new topic creation' 
           });
         }
-
-        console.log(`🆕 Creating new topic for customer: ${customerId}`);
-        
-        // Create new topic
-        const topicTitle = `Customer: ${customerId}`;
+        console.log(`🆕 Creating new topic for customer: ${email}`);
+        // Create new topic using email as the title
+        const topicTitle = `Customer: ${email}`;
         const topicResult = await bot.createForumTopic(
           process.env.TELEGRAM_GROUP_ID,
           topicTitle,
           { icon_color: 0x6FB9F0 }
         );
-        
         const newTopicId = topicResult.message_thread_id;
         console.log(`✅ New topic created after failure: ${newTopicId}`);
-
         // Send message to the new topic
         console.log(`📤 Sending message to new topic: ${newTopicId}`);
         const newMessageResult = await bot.sendMessage(
           process.env.TELEGRAM_GROUP_ID,
-          `**Customer Message:**\n${message}`,
+          `**Customer Message:**\n${composedMessage}`,
           {
             message_thread_id: newTopicId,
             parse_mode: 'Markdown'
           }
         );
-
         console.log(`✅ Message sent to new topic successfully`);
         console.log(`📝 New message ID: ${newMessageResult.message_id}`);
-
         res.json({
           success: true,
-          topicId: newTopicId,
+          chat_id: newTopicId,
           messageId: newMessageResult.message_id,
           topicCreated: true,
           topicRecreated: true
         });
       } else {
         console.log('❌ Not a topic error, re-throwing');
-        // Re-throw other errors
         throw sendError;
       }
     }
-
   } catch (error) {
     console.error('Error sending message to Telegram:', error);
     res.status(500).json({ 
@@ -283,10 +256,10 @@ const testSendEndpoint = async () => {
     console.log('📥 Response:', JSON.stringify(response.data, null, 2));
     
     if (response.data.topicCreated) {
-      console.log(`🎉 New topic created with ID: ${response.data.topicId}`);
+      console.log(`🎉 New topic created with ID: ${response.data.chat_id}`);
       console.log('💡 Bubble should store this topicId for future messages');
     } else {
-      console.log(`📝 Message sent to existing topic: ${response.data.topicId}`);
+      console.log(`📝 Message sent to existing topic: ${response.data.chat_id}`);
     }
     
     console.log('\n📝 **Test Instructions:**');

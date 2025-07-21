@@ -52,17 +52,17 @@ app.post('/api/telegram/send', async (req, res) => {
       email: email || 'not provided'
     });
 
-    // Map chat_id to topicId for internal logic
-    const topicId = chat_id;
-    console.log(`🔄 Mapped chat_id to topicId: ${topicId}`);
+    // Map chat_id to topicId for internal logic, treating empty or 0 as invalid
+    const topicId = !chat_id ? null : chat_id;
+    console.log(`🔄 Mapped chat_id to topicId: ${topicId || 'INVALID (0)'}`);
 
-    if (!message || !topicId) {
+    if (!message) {
       console.log('❌ Validation Failed:', {
         hasMessage: !!message,
-        hasTopicId: !!topicId
+        chat_id_value: chat_id
       });
       return res.status(400).json({ 
-        error: 'Missing required fields: message, chat_id' 
+        error: 'Missing required field: message' 
       });
     }
 

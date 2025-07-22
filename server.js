@@ -206,9 +206,15 @@ app.post('/api/telegram/webhook', async (req, res) => {
   try {
     console.log('\n📨 NEW WEBHOOK: Telegram → Bubble');
     console.log('⏰ Time:', new Date().toISOString());
+    console.log('RAW REQ BODY:', JSON.stringify(req.body, null, 2));
 
-    const { message } = req.body;
-    
+    const { message } = req.body || {};
+
+    if (!message || typeof message !== 'object') {
+      console.log('❌ Invalid: No message object');
+      return res.status(400).json({ error: 'No message object' });
+    }
+
     // Log the incoming webhook data
     console.log('\n📥 INCOMING WEBHOOK DATA:', {
       messageId: message?.message_id || 'not provided',
@@ -218,22 +224,22 @@ app.post('/api/telegram/webhook', async (req, res) => {
         firstName: message.from.first_name,
         is_bot: message.from.is_bot
       } : 'not provided',
-      text: message?.text ? 
+      text: typeof message.text === 'string' && message.text.trim() ? 
         `${message.text.slice(0, 50)}${message.text.length > 50 ? '...' : ''}` : 
         'not provided',
       threadId: message?.message_thread_id || 'not provided'
     });
 
     // Only process if not from a bot
-    if (!message || message.from.is_bot) {
-      console.log('❌ Ignored: Message is from a bot or missing');
-      return res.status(200).json({ message: 'Ignored bot or invalid message' });
+    if (message.from?.is_bot) {
+      console.log('❌ Ignored: Message is from a bot');
+      return res.status(200).json({ message: 'Ignored bot message' });
     }
 
-    // Verify message format
-    if (!message.text) {
-      console.log('❌ Invalid message format');
-      return res.status(400).json({ error: 'Invalid message format' });
+    // Check for text property (must be a non-empty string)
+    if (typeof message.text !== 'string' || !message.text.trim()) {
+      console.log('❌ Invalid message format: No text');
+      return res.status(400).json({ error: 'Invalid message format: No text' });
     }
 
     // Check if message is in a topic

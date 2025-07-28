@@ -35,13 +35,13 @@ app.post('/api/telegram/send', async (req, res) => {
     console.log('\n📨 NEW REQUEST: /api/telegram/send');
     console.log('⏰ Time:', new Date().toISOString());
     
-    // Accept chat_id, subject, message, email from Bubble
-    const { chat_id, subject, message, email } = req.body;
+    // Accept chat_id, subject, message, bubble_chat_id from Bubble
+    const { chat_id, subject, message, bubble_chat_id } = req.body;
     console.log('📝 Request Data:', {
       chat_id: chat_id || 'not provided',
       subject: subject || 'not provided',
       message: message ? `${message.slice(0, 50)}${message.length > 50 ? '...' : ''}` : 'not provided',
-      email: email || 'not provided'
+      bubble_chat_id: bubble_chat_id || 'not provided'
     });
 
     // Map chat_id to topicId for internal logic, treating empty as invalid
@@ -59,7 +59,7 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // --- Helper: Compose the message ---
-    function composeMessage(subject, message, email) {
+    function composeMessage(subject, message, bubble_chat_id) {
       console.log('📋 Composing message...');
       let composedMessage = '';
       if (subject) {
@@ -67,9 +67,9 @@ app.post('/api/telegram/send', async (req, res) => {
         console.log('✍️ Added subject to message');
       }
       composedMessage += message;
-      if (email) {
-        composedMessage += `\n\n**Email:** ${email}`;
-        console.log('✉️ Added email to message');
+      if (bubble_chat_id) {
+        composedMessage += `\n\n**Bubble Chat ID:** ${bubble_chat_id}`;
+        console.log('💬 Added bubble_chat_id to message');
       }
       console.log('📎 Final message length:', composedMessage.length);
       return composedMessage;
@@ -95,15 +95,15 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // --- Helper: Create a new topic ---
-    async function createNewTopic(email) {
-      if (!email) {
-        console.log('❌ Cannot create new topic: No email provided');
-        throw new Error('chat_id is 0 and email not provided for new topic creation');
+    async function createNewTopic(bubble_chat_id) {
+      if (!bubble_chat_id) {
+        console.log('❌ Cannot create new topic: No bubble_chat_id provided');
+        throw new Error('chat_id is 0 and bubble_chat_id not provided for new topic creation');
       }
       console.log('\n🆕 CREATING NEW TOPIC (chat_id=0):');
-      console.log(`- Customer Email: ${email}`);
-      // Create new topic using only the email as the title
-      const topicTitle = email;
+      console.log(`- Customer Bubble Chat ID: ${bubble_chat_id}`);
+      // Create new topic using only the bubble_chat_id as the title
+      const topicTitle = bubble_chat_id;
       console.log(`- Topic Title: ${topicTitle}`);
       const topicResult = await bot.createForumTopic(
         process.env.TELEGRAM_GROUP_ID,
@@ -116,12 +116,12 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // Compose the message
-    const composedMessage = composeMessage(subject, message, email);
+    const composedMessage = composeMessage(subject, message, bubble_chat_id);
 
     // If chat_id is 0, create a new topic
     if (Number(chat_id) === 0) {
       try {
-        const newTopicId = await createNewTopic(email);
+        const newTopicId = await createNewTopic(bubble_chat_id);
         console.log('\n📤 SENDING TO NEW TOPIC:');
         console.log(`- Topic ID: ${newTopicId}`);
         const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
@@ -135,7 +135,7 @@ app.post('/api/telegram/send', async (req, res) => {
           topicCreated: true
         });
       } catch (err) {
-        if (err.message === 'chat_id is 0 and email not provided for new topic creation') {
+        if (err.message === 'chat_id is 0 and bubble_chat_id not provided for new topic creation') {
           return res.status(400).json({ error: err.message });
         }
         throw err;
@@ -170,7 +170,7 @@ app.post('/api/telegram/send', async (req, res) => {
       console.log(`- Error Description: "${errorDescription}"`);
       if (sendError.response?.statusCode === 400 && isTopicError) {
         try {
-          const newTopicId = await createNewTopic(email);
+          const newTopicId = await createNewTopic(bubble_chat_id);
           const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
           res.json({
             success: true,
@@ -180,7 +180,7 @@ app.post('/api/telegram/send', async (req, res) => {
             topicRecreated: true
           });
         } catch (err) {
-          if (err.message === 'chat_id is 0 and email not provided for new topic creation') {
+          if (err.message === 'chat_id is 0 and bubble_chat_id not provided for new topic creation') {
             return res.status(400).json({ error: err.message });
           }
           throw err;
@@ -331,7 +331,7 @@ const testSendEndpoint = async () => {
     
     // Hardcoded Bubble data for testing
     const testData = {
-      message: "🧪 **Test Message from Bubble**\n\nThis is a test message sent via the API endpoint.\n\nCustomer: John Doe\nEmail: john@example.com\nIssue: Need help with my order",
+      message: "🧪 **Test Message from Bubble**\n\nThis is a test message sent via the API endpoint.\n\nCustomer: John Doe\nBubble Chat ID: bubble-chat-123\nIssue: Need help with my order",
       customerId: "test-customer-123",
       chatChannelId: "bubble-chat-channel-456",
       topicId: 112  // Uncomment to test existing topic

@@ -35,11 +35,10 @@ app.post('/api/telegram/send', async (req, res) => {
     console.log('\n📨 NEW REQUEST: /api/telegram/send');
     console.log('⏰ Time:', new Date().toISOString());
     
-    // Accept chat_id, subject, message, bubble_chat_id from Bubble
-    const { chat_id, subject, message, bubble_chat_id } = req.body;
+    // Accept chat_id, message, bubble_chat_id from Bubble
+    const { chat_id, message, bubble_chat_id } = req.body;
     console.log('📝 Request Data:', {
       chat_id: chat_id || 'not provided',
-      subject: subject || 'not provided',
       message: message ? `${message.slice(0, 50)}${message.length > 50 ? '...' : ''}` : 'not provided',
       bubble_chat_id: bubble_chat_id || 'not provided'
     });
@@ -59,13 +58,9 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // --- Helper: Compose the message ---
-    function composeMessage(subject, message, bubble_chat_id) {
+    function composeMessage(message, bubble_chat_id) {
       console.log('📋 Composing message...');
       let composedMessage = '';
-      if (subject) {
-        composedMessage += `**Subject:** ${subject}\n`;
-        console.log('✍️ Added subject to message');
-      }
       composedMessage += message;
       if (bubble_chat_id) {
         composedMessage += `\n\n**Bubble Chat ID:** ${bubble_chat_id}`;
@@ -116,7 +111,7 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // Compose the message
-    const composedMessage = composeMessage(subject, message, bubble_chat_id);
+    const composedMessage = composeMessage(message, bubble_chat_id);
 
     // If chat_id is 0, create a new topic
     if (Number(chat_id) === 0) {

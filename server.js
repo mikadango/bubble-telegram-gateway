@@ -35,15 +35,16 @@ app.post('/api/telegram/send', async (req, res) => {
     console.log('\n📨 NEW REQUEST: /api/telegram/send');
     console.log('⏰ Time:', new Date().toISOString());
     
-    // Accept chat_id, message, bubble_chat_id, owner, subject, to_vendor from Bubble
-    const { chat_id, message, bubble_chat_id, owner, subject, to_vendor } = req.body;
+    // Accept chat_id, message, bubble_chat_id, owner, subject, to_vendor, email from Bubble
+    const { chat_id, message, bubble_chat_id, owner, subject, to_vendor, email } = req.body;
     console.log('📝 Request Data:', {
       chat_id: chat_id || 'not provided',
       message: message ? `${message.slice(0, 50)}${message.length > 50 ? '...' : ''}` : 'not provided',
       bubble_chat_id: bubble_chat_id || 'not provided',
       owner: owner || 'not provided',
       subject: subject || 'not provided',
-      to_vendor: to_vendor || 'not provided'
+      to_vendor: to_vendor || 'not provided',
+      email: email || 'not provided'
     });
 
     // Map chat_id to topicId for internal logic, treating empty as invalid
@@ -98,17 +99,24 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // --- Helper: Create a new topic ---
-    async function createNewTopic(subject, to_vendor) {
+    async function createNewTopic(subject, email, to_vendor) {
       if (!subject) {
         console.log('❌ Cannot create new topic: No subject provided');
         throw new Error('chat_id is 0 and subject not provided for new topic creation');
       }
       console.log('\n🆕 CREATING NEW TOPIC (chat_id=0):');
       console.log(`- Subject: ${subject}`);
+      console.log(`- Email: ${email || 'not provided'}`);
       console.log(`- To Vendor: ${to_vendor || 'not provided'}`);
       
-      // Create new topic using the format "{subject} - {to_vendor}"
-      const topicTitle = to_vendor ? `${subject} - ${to_vendor}` : subject;
+      // Create new topic using the format "{subject} - {email} - {to_vendor}"
+      let topicTitle = subject;
+      if (email) {
+        topicTitle += ` - ${email}`;
+      }
+      if (to_vendor) {
+        topicTitle += ` - ${to_vendor}`;
+      }
       console.log(`- Topic Title: ${topicTitle}`);
       const topicResult = await bot.createForumTopic(
         process.env.TELEGRAM_GROUP_ID,
@@ -126,7 +134,7 @@ app.post('/api/telegram/send', async (req, res) => {
     // If chat_id is 0, create a new topic
     if (Number(chat_id) === 0) {
       try {
-        const newTopicId = await createNewTopic(subject, to_vendor);
+        const newTopicId = await createNewTopic(subject, email, to_vendor);
         console.log('\n📤 SENDING TO NEW TOPIC:');
         console.log(`- Topic ID: ${newTopicId}`);
         const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage, owner);
@@ -175,7 +183,7 @@ app.post('/api/telegram/send', async (req, res) => {
       console.log(`- Error Description: "${errorDescription}"`);
       if (sendError.response?.statusCode === 400 && isTopicError) {
         try {
-          const newTopicId = await createNewTopic(subject, to_vendor);
+          const newTopicId = await createNewTopic(subject, email, to_vendor);
           const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage, owner);
           res.json({
             success: true,

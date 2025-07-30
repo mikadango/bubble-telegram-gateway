@@ -35,12 +35,13 @@ app.post('/api/telegram/send', async (req, res) => {
     console.log('\n📨 NEW REQUEST: /api/telegram/send');
     console.log('⏰ Time:', new Date().toISOString());
     
-    // Accept chat_id, message, bubble_chat_id from Bubble
-    const { chat_id, message, bubble_chat_id } = req.body;
+    // Accept chat_id, message, bubble_chat_id, owner from Bubble
+    const { chat_id, message, bubble_chat_id, owner } = req.body;
     console.log('📝 Request Data:', {
       chat_id: chat_id || 'not provided',
       message: message ? `${message.slice(0, 50)}${message.length > 50 ? '...' : ''}` : 'not provided',
-      bubble_chat_id: bubble_chat_id || 'not provided'
+      bubble_chat_id: bubble_chat_id || 'not provided',
+      owner: owner || 'not provided'
     });
 
     // Map chat_id to topicId for internal logic, treating empty as invalid
@@ -71,13 +72,18 @@ app.post('/api/telegram/send', async (req, res) => {
     }
 
     // --- Helper: Send message to a topic ---
-    async function sendMessageToTopic(targetTopicId, composedMessage) {
+    async function sendMessageToTopic(targetTopicId, composedMessage, owner) {
       console.log(`\n📤 SENDING MESSAGE:`);
       console.log(`🎯 Target Topic ID: ${targetTopicId}`);
       console.log(`📦 Group ID: ${process.env.TELEGRAM_GROUP_ID}`);
+      console.log(`👤 Owner: ${owner || 'Customer'}`);
+      
+      // Use owner name if provided, otherwise default to "Customer"
+      const senderName = owner || 'Customer';
+      
       const messageResult = await bot.sendMessage(
         process.env.TELEGRAM_GROUP_ID,
-        `**Customer Message:**\n${composedMessage}`,
+        `**${senderName} Message:**\n${composedMessage}`,
         {
           message_thread_id: targetTopicId,
           parse_mode: 'Markdown'
@@ -119,7 +125,7 @@ app.post('/api/telegram/send', async (req, res) => {
         const newTopicId = await createNewTopic(bubble_chat_id);
         console.log('\n📤 SENDING TO NEW TOPIC:');
         console.log(`- Topic ID: ${newTopicId}`);
-        const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
+        const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage, owner);
         console.log('\n✅ SUCCESS:');
         console.log(`- Message ID: ${newMessageResult.message_id}`);
         console.log(`- New Topic ID: ${newTopicId}`);
@@ -139,7 +145,7 @@ app.post('/api/telegram/send', async (req, res) => {
 
     // Try to send message to the topic (for non-zero chat_id)
     try {
-      const messageResult = await sendMessageToTopic(topicId, composedMessage);
+      const messageResult = await sendMessageToTopic(topicId, composedMessage, owner);
       res.json({
         success: true,
         chat_id: topicId,
@@ -166,7 +172,7 @@ app.post('/api/telegram/send', async (req, res) => {
       if (sendError.response?.statusCode === 400 && isTopicError) {
         try {
           const newTopicId = await createNewTopic(bubble_chat_id);
-          const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage);
+          const newMessageResult = await sendMessageToTopic(newTopicId, composedMessage, owner);
           res.json({
             success: true,
             chat_id: newTopicId,
